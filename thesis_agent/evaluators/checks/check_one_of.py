@@ -15,6 +15,7 @@ from __future__ import annotations
 from ...spec.predicates import evaluate as predicate_evaluate
 from ..runner import register_check
 from ..types import CheckResult
+from ._result import skip_result
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
@@ -43,27 +44,30 @@ def _check_page_number_format(rule, doc) -> CheckResult:
         sections = doc.sections
 
     if not sections:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence="document has no sections",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
         )
 
     if len(sections) < 2 and target == "body":
         # No body/front split yet (typical for hand-built fixtures).
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence="single-section doc; no body section yet",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
         )
 
     section = sections[0] if target == "front" else sections[-1]
     actual = _section_fmt(section)
     if actual is None:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence="no pgNumType set on section",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
         )
 
     passed = predicate_evaluate(rule.predicate, actual, rule.expected)
@@ -79,12 +83,11 @@ def _check_page_number_format(rule, doc) -> CheckResult:
 def _one_of_dispatcher(rule, doc):
     if rule.id.startswith("page_number."):
         return _check_page_number_format(rule, doc)
-    return CheckResult(
-        rule_id=rule.id,
-        status="skip",
+    return skip_result(
+        rule=rule,
         evidence=f"no one_of handler for {rule.id!r}",
-        locator_resolved=rule.locator or {},
-        severity=rule.severity,
+        reason="unmeasurable",
+        check_coverage="unimplemented",
     )
 
 

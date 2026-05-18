@@ -33,6 +33,7 @@ class DeliveryItem:
     fix_attempts: list[dict[str, Any]]
     diagnosis: Optional[dict[str, Any]]
     advice: str = ""
+    check_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -110,6 +111,7 @@ def build_delivery_report(
                     fix_attempts=attempts,
                     diagnosis=_diagnosis_dict(d),
                     advice=_advice(status, d),
+                    check_metadata=dict(getattr(cr, "metadata", {}) or {}),
                 )
             )
 
@@ -184,6 +186,7 @@ def write_report_json(delivery: DeliveryReport, path: str) -> None:
                 "fix_attempts": it.fix_attempts,
                 "diagnosis": it.diagnosis,
                 "advice": it.advice,
+                "check_metadata": it.check_metadata,
             }
             for it in delivery.items
         ],

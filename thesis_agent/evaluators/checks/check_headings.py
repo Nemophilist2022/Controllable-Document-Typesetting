@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from ..runner import register_check
 from ..types import CheckResult
+from ._result import skip_result
 
 
 def _has_heading_level(doc, level: int) -> bool:
@@ -34,12 +35,12 @@ def check_heading_exists(rule, doc) -> CheckResult:
     locator = rule.locator or {}
     level = locator.get("heading_level")
     if level is None:
-        return CheckResult(
-            rule_id=rule.id,
-            status="skip",
+        return skip_result(
+            rule=rule,
             evidence="locator missing heading_level; check_headings cannot dispatch",
-            locator_resolved=locator,
-            severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
+            check_coverage="unimplemented",
         )
 
     present = _has_heading_level(doc, int(level))
@@ -61,12 +62,12 @@ def _exists_dispatcher(rule, doc):
     if locator.get("front_matter"):
         from .check_front_matter import check_front_matter_presence
         return check_front_matter_presence(rule, doc)
-    return CheckResult(
-        rule_id=rule.id,
-        status="skip",
+    return skip_result(
+        rule=rule,
         evidence=f"no exists handler for locator {locator!r}",
-        locator_resolved=locator,
-        severity=rule.severity,
+        locator=locator,
+        reason="unmeasurable",
+        check_coverage="unimplemented",
     )
 
 

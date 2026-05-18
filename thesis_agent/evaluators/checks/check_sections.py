@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from ...spec.predicates import evaluate as predicate_evaluate
 from ..types import CheckResult
+from ._result import skip_result
 
 
 _CM_TOLERANCE = 0.01  # 1 mm; cm values from yaml are written to 1-2 decimals
@@ -59,26 +60,31 @@ def check_all_sections_attr(rule, doc) -> CheckResult:
     locator = rule.locator or {}
     attr = locator.get("attr")
     if not attr:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence="locator missing attr",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
+            check_coverage="unimplemented",
         )
 
     sections = _sections(doc)
     if not sections:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence="document has no sections",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
         )
 
     actual_values = [_attr_value_cm(s, attr) for s in sections]
     if any(v is None for v in actual_values):
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence=f"attr {attr!r} unsupported",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
+            check_coverage="unimplemented",
         )
 
     # Sections must (a) all match expected and (b) be uniform.

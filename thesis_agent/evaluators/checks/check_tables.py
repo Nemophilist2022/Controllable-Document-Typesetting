@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from ...spec.predicates import evaluate as predicate_evaluate
 from ..types import CheckResult
+from ._result import skip_result
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
@@ -73,19 +74,21 @@ def check_all_tables_edge(rule, doc) -> CheckResult:
     edge = locator.get("edge")
     tables = _tables(doc)
     if not tables:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence="document has no tables",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="not_applicable",
         )
     actual_values = [_edge_sz_for_table(t, edge) for t in tables]
     # If the document has tables but none have a border on this edge,
     # mark as skip (likely not a three-line table at all).
     if all(v is None for v in actual_values):
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence=f"no {edge} border found on any table",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
         )
 
     measurable = [v for v in actual_values if v is not None]

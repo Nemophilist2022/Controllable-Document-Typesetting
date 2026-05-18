@@ -21,6 +21,7 @@ from typing import Iterable, Optional
 
 from ...spec.predicates import evaluate as predicate_evaluate
 from ..types import CheckResult
+from ._result import skip_result
 
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -150,10 +151,12 @@ def check_paragraph_group_attr(rule, doc) -> CheckResult:
     locator = rule.locator or {}
     attr = locator.get("attr")
     if not attr:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence="locator missing attr",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
+            check_coverage="unimplemented",
         )
 
     paragraphs = _paragraphs(doc)
@@ -167,25 +170,29 @@ def check_paragraph_group_attr(rule, doc) -> CheckResult:
         selected = list(_select_toc_entries(paragraphs))
         group_label = "toc_entries"
     else:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence=f"unsupported paragraph locator {locator!r}",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
+            check_coverage="unimplemented",
         )
 
     if not selected:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence=f"no {group_label} found in document",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="not_applicable",
         )
 
     sample, uniform, count = _aggregate(selected, attr)
     if sample is None:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence=f"{group_label} have no {attr} set ({count} checked)",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
         )
     if not uniform:
         return CheckResult(

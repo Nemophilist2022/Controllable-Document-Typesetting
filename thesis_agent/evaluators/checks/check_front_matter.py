@@ -20,6 +20,7 @@ import re
 
 from ..runner import register_check
 from ..types import CheckResult
+from ._result import skip_result
 
 
 def _truncate(s: str, limit: int = 80) -> str:
@@ -86,10 +87,12 @@ def check_front_matter_presence(rule, doc) -> CheckResult:
     target = locator.get("front_matter")
     probe = _PROBES.get(target) if target else None
     if probe is None:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence=f"no probe for front_matter={target!r}",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
+            check_coverage="unimplemented",
         )
     present = probe(doc)
     expected = bool(rule.expected)

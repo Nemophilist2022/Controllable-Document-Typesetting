@@ -21,6 +21,7 @@ from typing import Any
 
 from ...spec.predicates import evaluate as predicate_evaluate
 from ..types import CheckResult
+from ._result import skip_result
 
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -93,31 +94,29 @@ def check_style_attr(rule, doc) -> CheckResult:
 
     style = _get_style(doc, style_name) if style_name else None
     if style is None:
-        return CheckResult(
-            rule_id=rule.id,
-            status="skip",
+        return skip_result(
+            rule=rule,
             evidence=f"style {style_name!r} not found",
-            locator_resolved=locator,
-            severity=rule.severity,
+            locator=locator,
+            reason="not_applicable",
         )
 
     if not attr:
-        return CheckResult(
-            rule_id=rule.id,
-            status="skip",
+        return skip_result(
+            rule=rule,
             evidence=f"could not infer attr from rule id {rule.id!r}",
-            locator_resolved=locator,
-            severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
+            check_coverage="unimplemented",
         )
 
     actual = _get_attr(style, attr)
     if actual is None:
-        return CheckResult(
-            rule_id=rule.id,
-            status="skip",
+        return skip_result(
+            rule=rule,
             evidence=f"attr {attr!r} unset on style {style_name!r}",
-            locator_resolved=locator,
-            severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
         )
 
     passed = predicate_evaluate(rule.predicate, actual, rule.expected)

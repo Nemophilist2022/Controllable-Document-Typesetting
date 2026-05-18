@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from ..runner import register_check
 from ..types import CheckResult
+from ._result import skip_result
 
 
 def _iter_paragraph_style_names(doc):
@@ -39,12 +40,12 @@ def _count_headings_and_toc_entries(doc) -> tuple[int, int]:
 
 def check_toc_entry_count(rule, doc) -> CheckResult:
     if rule.id != "toc.entry_count":
-        return CheckResult(
-            rule_id=rule.id,
-            status="skip",
+        return skip_result(
+            rule=rule,
             evidence="not handled by check_toc",
-            locator_resolved=rule.locator or {},
-            severity=rule.severity,
+            locator=rule.locator or {},
+            reason="unmeasurable",
+            check_coverage="unimplemented",
         )
 
     headings, toc_entries = _count_headings_and_toc_entries(doc)
@@ -144,12 +145,12 @@ def _equals_dispatcher(rule, doc):
     # Fallthrough: not addressable by any registered handler. Skip
     # (rather than fail) so MVP-style fixtures aren't punished for
     # rules whose checks land in v0.3.
-    return CheckResult(
-        rule_id=rule.id,
-        status="skip",
+    return skip_result(
+        rule=rule,
         evidence=f"no equals handler for locator {locator!r}",
-        locator_resolved=locator,
-        severity=rule.severity,
+        locator=locator,
+        reason="unmeasurable",
+        check_coverage="unimplemented",
     )
 
 

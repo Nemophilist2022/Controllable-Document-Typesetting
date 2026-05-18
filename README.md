@@ -182,13 +182,46 @@ python thesis_format_cli.py --dump-config
 所以更准确的说法是：
 **Word 原稿支持“未完整排版”的内容，但如果你能先把标题层级套好，整体成功率和完整度会更高。**
 
-## thesis-agent 命令行（实验性 / v0.1）
+## thesis-agent 命令行（Agent 闭环 / v0.2）
 
 `thesis-agent` 是基于规则评测 + AI 诊断的可控交付系统，跟现有 `thesis_format_cli.py` / GUI **并存、不替换**。它跑完会同时给你三件机读产物：
 
 - `<论文>_formatted.docx`（mode=full / targeted 时输出）
 - `<论文>_report.md` / `<论文>_report.json`：按 ✅ 已完成 / ⚠ 部分完成 / ❌ 未完成 / ⏭ 已跳过 四档汇报
 - `<论文>_trace.jsonl`：每一步 plan / 工具调用 / 评测 / 诊断的全程审计
+
+### 当前已完成的 Agent 能力
+
+目前 `thesis-agent` 已经不是只跑一次固定脚本的包装层，而是一个可追踪的规则闭环：
+
+1. **规则编译**：`defaults/scau_2024.yaml` 会编译成 12 个维度、41 条可执行规则，覆盖页面、正文、标题、编号、图表题注、三线表、目录、参考文献、页眉、页码、前置页等论文排版项。
+2. **评测闭环**：`evaluate -> fix -> re-evaluate` 已打通。`mode=full` 先跑默认工具计划，再重新评测；仍失败的规则进入诊断/补救链路。
+3. **工具白名单**：Agent 只能调用 `thesis_agent/tools/` 中注册的 Tool，例如 `tool_format_body`、`tool_assign_heading_styles`、`tool_normalize_sections`、`tool_insert_toc`、`tool_setup_page_numbers` 等；每次调用都有 trace。
+4. **规则到工具映射**：每条 Rule 带 `fix_tool` / `fix_params_template`。当 LLM 没给出可靠计划时，可退回到规则自带工具进行可控修复。
+5. **LLM 诊断**：失败项会按 rule 前缀选择 prompt 模板（`body.md`、`heading.md`、`page_number.md` 等），返回 `root_cause`、`fix_plan`、`confidence`、`needs_human`。
+6. **人在回路**：低置信度、破坏性操作或 `--auto-apply-diagnosis confirm/no` 会生成 `_pending.json`，用户审完后可 `--resume`。
+7. **交付报告**：`report.json` / `report.md` 会列出 done / partial / failed / skipped、证据、修复尝试、诊断建议、LLM telemetry、工具调用次数。
+8. **skip 语义收敛**：当前 skip 不再表示“规则没实现”。每个 skipped item 在 `report.json.items[].check_metadata` 中带 `skip_reason`：
+   - `not_applicable`：文档没有对应对象，例如没有图表题注、三线表或参考文献条目；
+   - `unmeasurable`：OOXML 中缺少可直接判定的字段，例如未设置 `pgNumType`、没有 front/body 分节，或样式属性继承自主题而非显式写入。
+
+### 41 条规则的 check 覆盖现状
+
+| 维度 | 规则示例 | 当前 check 状态 |
+|---|---|---|
+| 正文 | `body.font.east_asia`、`body.font.size`、`body.line_spacing`、`body.first_line_indent` | 完整检查 Normal 样式 |
+| 标题 | `heading.h1.style_present`、`heading.h1-h4.font.*`、`heading.h1-h4.bold` | 完整检查 Heading 样式；属性未显式写入时标为 `unmeasurable` |
+| 标题编号 | `heading.numbering.continuity` | 检查可解析编号连续性；无可解析编号时 `unmeasurable` |
+| 页面 | `page.margin.*`、`page.gutter`、`page.header_distance`、`page.footer_distance` | 完整检查所有 section 的 OOXML 尺寸 |
+| 图表题注 | `caption.font.*`、`caption.numbering.continuity` | 有题注时检查字体/字号/连续性；无题注时 `not_applicable` |
+| 三线表 | `table.border.top/header/bottom` | 有表格边框时检查线宽；无表格时 `not_applicable` |
+| 参考文献 | `reference.first_line_indent` | 检查 `[n]` 条目的首行缩进；无参考文献条目时 `not_applicable` |
+| 页眉 | `header.enabled` | 检查 section header story 是否存在非空文本 |
+| 页码 | `page_number.front.format`、`page_number.body.format` | 检查 section 的 `w:pgNumType/@fmt`；缺少分节或字段时 `unmeasurable` |
+| 前置页 | `front_matter.*.present` | 检查中英文摘要/关键词标记是否存在 |
+| 目录 | `toc.entry_count`、`toc.font.east_asia` | 检查目录条目数与标题数；目录字体缺少显式字体时 `unmeasurable` |
+
+测试中新增了 coverage guard：`scau_2024` 的 41 条规则不允许出现“未实现型 skip”。后续如果新增规则但没有接入 check，测试会直接失败。
 
 ### 6 种运行模式
 
@@ -317,12 +350,13 @@ python -m thesis_agent.cli run --input 论文.docx --profile scau_2024 --auto-ap
 
 `thesis_gui.py` 主操作按钮"开始格式化"行为不变。右下角新增"AI 评测（实验性）"按钮，点击后用 `mode=eval_only` 跑一次 thesis-agent 并弹出完成度报告窗口；不动原文档。
 
-### v0.1 限制
+### 当前限制与可靠性边界
 
-- LLM 诊断的真实可用性依赖你接的模型质量，confidence < 0.7 强制走人工
-- 12 维度的 41 条规则中约 60% 已有完整 check，其余按 skip 处理（不会误报 fail）
-- mode=full 与 mode=fast 段落级语义不一致是预期行为：mode=fast 走原 `thesis_runner.run_format`，mode=full 只跑当前注册的工具子集
-- `tool_assign_heading_styles` 在原稿已有"第N章 ..."字样的 TOC 段时会误升 H1（详见 [thesis_agent/tools/heading_tools.py 文档注释](thesis_agent/tools/heading_tools.py)）
+- **LLM 质量仍是变量**：规则评测本身不依赖 LLM；LLM 只负责解释失败原因和生成补救计划。`confidence < 0.7` 或 `needs_human=true` 默认走人工确认。
+- **skip 只表示 N/A 或不可测**：41 条规则均已接入 check；但 Word 中有些信息不一定以显式 OOXML 字段存在，例如页码显示效果、主题继承字体、未分节的 front/body 页码范围。这类结果会写入 `check_metadata.skip_reason=unmeasurable`，不会伪装成 done。
+- **mode=full 与 mode=fast 不完全等价**：`mode=fast` 仍走原 `thesis_runner.run_format`；`mode=full` 走 Agent 工具白名单、评测、诊断、再计划闭环，更可控但覆盖范围取决于已注册工具。
+- **自动修复仍按工具能力边界执行**：缺少摘要正文、参考文献真实内容、图片/表格本体等语义内容时，Agent 只能报告缺失或等待人工补充，不能凭空生成可信学术内容。
+- **已知标题识别限制**：`tool_assign_heading_styles` 在原稿已有"第N章 ..."字样的 TOC 段时可能误升 H1（详见 [thesis_agent/tools/heading_tools.py 文档注释](thesis_agent/tools/heading_tools.py)）。
 
 完整设计见 `docs/superpowers/specs/2026-04-15-ai-thesis-agent-architecture-design.md`，需求与冻结默认值见同目录 `-requirements.md`。
 

@@ -18,6 +18,7 @@ from docx.enum.text import WD_LINE_SPACING
 from ...spec.predicates import evaluate as predicate_evaluate
 from ..runner import register_check
 from ..types import CheckResult
+from ._result import skip_result
 
 
 def _truncate(s: str, limit: int = 80) -> str:
@@ -55,12 +56,12 @@ def check_normal_style_equals(rule, doc) -> CheckResult:
     """Dispatch ``equals`` rules whose locator points at Normal style."""
     locator = rule.locator or {}
     if locator.get("style_name") != "Normal":
-        return CheckResult(
-            rule_id=rule.id,
-            status="skip",
+        return skip_result(
+            rule=rule,
             evidence="locator not Normal style; not handled here",
-            locator_resolved=locator,
-            severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
+            check_coverage="unimplemented",
         )
 
     style = _normal_style(doc)

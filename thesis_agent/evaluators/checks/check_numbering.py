@@ -24,6 +24,7 @@ from thesis_formatter._common import (
 )
 
 from ..types import CheckResult
+from ._result import skip_result
 
 
 def _truncate(s: str, limit: int = 80) -> str:
@@ -143,10 +144,11 @@ def check_heading_numbering_continuity(rule, doc) -> CheckResult:
     locator = rule.locator or {}
     headings = list(_walk_headings(doc))
     if not headings:
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence="no parsable numbered headings",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="unmeasurable",
         )
     gaps = _detect_heading_gaps(headings)
     if not gaps:
@@ -181,10 +183,11 @@ def check_caption_numbering_continuity(rule, doc) -> CheckResult:
     warnings = _check_caption_numbering(raw, fig_pat, tbl_pat, cfg=cfg) or []
     # No captions in doc → skip rather than pass (don't claim correctness).
     if not warnings and not _has_any_caption(raw, fig_pat, tbl_pat):
-        return CheckResult(
-            rule_id=rule.id, status="skip",
+        return skip_result(
+            rule=rule,
             evidence="no captions in document",
-            locator_resolved=locator, severity=rule.severity,
+            locator=locator,
+            reason="not_applicable",
         )
     if warnings:
         # Each warning is already a clear human-readable line; pick the
