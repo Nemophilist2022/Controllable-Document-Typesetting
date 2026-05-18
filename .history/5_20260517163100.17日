@@ -1,0 +1,287 @@
+这个系统已经不是空壳，核心排版工具和 thesis-agent 框架都做出来了；但还没达到你描述的“用户输入文本 + 自然语言描述格式/给模板文件 + 自动改完并准确汇报完成/未完成”的完整目标。
+
+当前更准确的状态是：
+
+老排版系统可用；新 thesis-agent 已有规则评测、报告、LLM 诊断、人审 pending、工具注册等架构，但自然语言模板理解、任意模板文件抽取、完整自动修复闭环还没有真正打通。
+
+1. 当前系统已经能做什么
+A. 传统排版主流程已经比较完整
+入口：
+
+python run_gui.py
+python thesis_format_cli.py --input 论文.docx
+python thesis_format_cli.py --input 论文.docx --config thesis_config.yaml
+支持输入：
+
+.docx
+.doc
+.txt
+.md
+.tex
+当前环境里 Pandoc 是可找到的：
+
+C:\Users\djm\AppData\Local\Pandoc\pandoc.exe
+所以 .txt/.md/.tex -> docx 的链路理论上可跑。
+
+能处理的格式范围包括：
+
+页面边距
+正文字体字号、行距、缩进
+标题识别与标题样式
+标题编号
+目录
+页眉页码
+图表题注
+三线表
+参考文献缩进
+封面、声明页
+局部模式：只插目录、只改页码、只改页眉、只插封面等
+这部分是当前最实用、最接近可交付的部分。
+
+B. YAML 模板/配置已经支持
+你说的“给它模板文件”，如果这个模板是 YAML 配置文件，当前是支持的。
+
+例如：
+
+python thesis_format_cli.py --input 论文.docx --config 我的学校.yaml
+GUI 里也有：
+
+保存配置
+加载配置
+恢复默认
+默认模板是：
+
+defaults/scau_2024.yaml
+也就是华南农业大学 2024 规则。
+
+C. thesis-agent 已经有“完成/未完成报告”能力
+入口：
+
+.\.venv\Scripts\python.exe -m thesis_agent.cli run --input 论文.docx --profile scau_2024 --mode full
+.\.venv\Scripts\python.exe -m thesis_agent.cli run --input 论文.docx --profile scau_2024 --mode eval_only
+它可以输出：
+
+<论文>_formatted.docx
+<论文>_report.md
+<论文>_report.json
+<论文>_trace.jsonl
+必要时 <论文>_pending.json
+报告会按四类汇总：
+
+✅ 已完成
+⚠️ 部分完成
+❌ 未完成
+⏭ 已跳过
+这一块已经对准了你说的：
+
+哪个地方帮我修改完成了，哪个地方没有完成，需要修改。
+
+D. thesis-agent 当前已注册 15 个工具
+我用项目自带虚拟环境跑了：
+
+.\.venv\Scripts\python.exe -m thesis_agent.cli list tools
+能看到这些工具：
+
+tool_format_body
+tool_assign_heading_styles
+tool_renumber_headings
+tool_normalize_heading_spacing
+tool_setup_multilevel_list
+tool_normalize_sections
+tool_format_figure_captions
+tool_format_table_captions
+tool_format_three_line_tables
+tool_format_references
+tool_setup_headers
+tool_setup_page_numbers
+tool_setup_page_numbers_strict
+tool_insert_toc
+tool_insert_cover_and_declaration
+tool_word_postprocess
+说明底层“可调用修改动作”已经封装得不少了。
+
+E. 当前 profile 有 41 条规则
+我跑了：
+
+.\.venv\Scripts\python.exe -m thesis_agent.cli list rules scau_2024
+当前 scau_2024 规则覆盖：
+
+正文字体
+正文字号
+正文行距
+首行缩进
+标题 H1-H4 字体、字号、加粗
+标题编号连续性
+页面边距
+图题表题
+三线表
+参考文献缩进
+页眉
+页码格式
+前置页摘要/关键词
+目录条目数
+目录字体
+这说明“规则评测框架”已经成型。
+
+2. 当前还不能完整做到什么
+A. 还不能真正理解“自然语言格式要求”
+你目标里说：
+
+我输入文本，然后描述修改成什么样子的格式。
+
+目前这部分 没有完整实现。
+
+现状是：
+
+GUI 可以手动选配置。
+YAML 可以表达格式。
+LLM 现在主要用于“诊断失败规则，并建议调用哪个工具修复”。
+template_loader.from_natural_language() 目前只是 stub：把自然语言写成一个待人工审核的 YAML 草稿，不会真正抽取规则并自动进入排版流程。
+所以现在还不能稳定支持：
+
+“把一级标题改成黑体三号居中，正文宋体小四 1.5 倍行距，参考文献悬挂缩进 2 字符。”
+
+然后系统自动理解、生成规则、执行、报告。
+
+这块需要继续开发。
+
+B. 不支持直接从 Word 模板 .docx 自动抽取格式规则
+如果你说的模板文件是：
+
+学校给的 .docx 模板
+已排好格式的 Word 示例
+PDF 格式规范
+当前系统还不能完整自动读取这些模板，然后反推出所有格式规则。
+
+现在支持最好的模板形式是：
+
+YAML 配置文件
+.docx 模板 -> 规则集 还没做。
+
+C. thesis-agent 的自动修复闭环还不完整
+虽然注册了 15 个工具、41 条规则，但当前默认 full 计划还比较固定：
+
+tool_assign_heading_styles
+tool_format_body
+tool_insert_toc
+tool_word_postprocess
+也就是说：
+
+工具很多；
+规则很多；
+但默认编排还不是“发现哪条规则失败，就自动精准调用对应工具修复”。
+LLM 可以返回 fix_plan，但这依赖模型和 prompt，目前还不是稳态生产能力。
+
+D. 测试目前不是全绿
+我用项目虚拟环境跑了完整测试：
+
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+结果：
+
+Ran 227 tests
+FAILED/errors=1
+主要暴露两个问题。
+
+问题 1：Windows GBK 控制台下 CLI 打印 emoji 会炸
+错误点：
+
+print(f"⚠️ 待审 pending: {result.pending_path}")
+在 GBK 控制台下报：
+
+UnicodeEncodeError: 'gbk' codec can't encode character '\u26a0'
+这个很好修：CLI 输出不要直接打印 emoji，或强制 UTF-8/safe print。
+
+问题 2：happy path 业务断言失败
+我设置 UTF-8 后单独复跑：
+
+$env:PYTHONIOENCODING='utf-8'
+.\.venv\Scripts\python.exe -m unittest tests.scenarios.test_e2e_happy -v
+结果：
+
+expected failed=0, got summary={'total': 41, 'done': 22, 'partial': 0, 'failed': 3, 'skipped': 16}
+失败的 3 条是：
+
+heading.h2.font.size
+heading.h3.bold
+heading.h4.bold
+这说明现在扩展到 41 条规则后，原来的 happy fixture 或默认 full 修复计划没有同步更新。简单说：
+
+系统能力扩展了，但验收样例/默认修复闭环还没完全对齐。
+
+3. 现在系统完成到哪一步
+我按你的目标拆成 5 层：
+
+目标层	当前状态
+输入论文文本/Word	基本完成：docx/doc/txt/md/tex 支持
+通过配置控制格式	基本完成：YAML + GUI 配置可用
+自然语言描述格式	未完成：目前只是占位/诊断，不是完整规则抽取
+自动修改格式	部分完成：老流程强，新 agent 闭环还不完整
+汇报哪里完成/哪里未完成	部分完成：agent report 已有，但测试未全绿，GUI 主流程还没完全融合
+总体判断：
+
+传统排版工具：可用度 75%~85%
+thesis-agent 可控交付系统：可用度 55%~65%
+自然语言/模板智能化目标：完成度 25%~35%
+4. 我建议下一步优先做什么
+第一优先级：先让测试全绿
+必须先修两个问题：
+
+CLI 输出编码问题
+把 emoji CLI 输出改成普通中文或 safe print。
+
+修 happy path
+二选一：
+
+让 fixture 设置 Heading 2/3/4 样式；
+或让 full 默认计划加入 tool_normalize_heading_spacing，确保 H2/H3/H4 样式也被修好。
+第二优先级：把“规则失败 -> 工具修复”打通
+现在不应该只靠固定 plan，而应该：
+
+evaluate 发现 rule failed
+-> 读取 rule.fix_tool
+-> 自动生成 tool params
+-> 执行工具
+-> 再 evaluate
+-> 报告 done/failed
+这一步做完，thesis-agent 才真正接近你要的“可控自动修改”。
+
+第三优先级：做自然语言格式描述入口
+新增类似：
+
+python -m thesis_agent.cli run --input 论文.txt --instruction "正文宋体小四，1.5倍行距，一级标题黑体三号居中"
+内部流程：
+
+自然语言
+-> LLM/规则解析
+-> YAML 草稿
+-> 人工确认
+-> RuleSet
+-> 执行格式化
+-> 生成报告
+先做人审版，不要直接全自动。
+
+第四优先级：支持 Word 模板抽取
+如果你真正想“给模板文件”，建议增加：
+
+--template-docx 学校模板.docx
+先抽取这些稳定项：
+
+Normal 正文字体字号行距
+Heading 1-4 样式
+页面边距
+页眉页脚
+目录样式
+参考文献段落格式
+不要一开始就抽复杂封面和所有 OOXML。
+
+5. 一句话总结
+你现在的系统已经具备：
+
+把论文按 YAML/GUI 配置批量排版，并用 thesis-agent 评测和生成完成度报告的基础能力。
+
+但距离你的最终目标还差三块关键能力：
+
+自然语言格式要求 -> 可执行规则
+Word/PDF 模板 -> 可执行规则
+评测失败 -> 自动选择工具修复 -> 再评测的稳定闭环
+当前最该先做的是：修测试全绿 + 动态修复闭环。

@@ -1,0 +1,193 @@
+"""Formatting pipeline for the universal thesis formatter."""
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+from preprocess_txt_to_md import preprocess
+from thesis_config import resolve_config
+from thesis_format_2024 import apply_format
+from word_postprocess import postprocess
+
+
+def find_pandoc():
+    """Locate pandoc: exe sibling dir -> _MEIPASS -> PATH."""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(os.path.join(os.path.dirname(sys.executable), "pandoc.exe"))
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    candidates.append(os.path.join(base, "pandoc.exe"))
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    found = shutil.which("pandoc")
+    if found:
+        return found
+    return None
+
+
+def convert_doc_to_docx(doc_path, out_docx):
+    """Convert .doc to .docx via Word COM."""
+    import pythoncom
+    import win32com.client as win32
+
+    pythoncom.CoInitialize()
+    word = None
+    try:
+        word = win32.DispatchEx("Word.Application")
+        word.Visible = False
+        word.DisplayAlerts = 0
+        doc = word.Documents.Open(os.path.abspath(doc_path))
+        doc.SaveAs(os.path.abspath(out_docx), 12)
+        doc.Close()
+    finally:
+        if word:
+            try:
+                word.Quit()
+            except Exception:
+                pass
+        pythoncom.CoUninitialize()
+
+
+def _header_uses_chapter_title_fields(config):
+    header_cfg = config.get("header_footer", {}) if config else {}
+    texts = [
+        header_cfg.get("odd_page_text", ""),
+        header_cfg.get("even_page_text", ""),
+    ]
+    return any("{chapter_title}" in (text or "") for text in texts)
+
+
+def _resolve_postprocess_mode(config):
+    if not config:
+        return "full"
+
+    runtime = config.get("_runtime", {})
+    local_mode = runtime.get("local_mode")
+    if local_mode == "cover":
+        return "none"
+    if local_mode == "toc":
+        return "full"
+    if local_mode == "page_numbers":
+        return "none"
+    if local_mode == "header_footer":
+        return "fields_only"
+
+    if runtime.get("cover_only") or config.get("cover", {}).get("only_insert", False):
+        return "none"
+    if config.get("toc", {}).get("only_insert", False):
+        return "full"
+    if config.get("page_numbers", {}).get("only_insert", False):
+        return "none"
+    if config.get("header_footer", {}).get("only_insert", False):
+        return "fields_only"
+    return "full"
+
+def run_format(input_path, output_path, log,
+               config=None, config_path=None):
+    """Core formatting pipeline. log(str) receives progress messages."""
+    ext = os.path.splitext(input_path)[1].lower()
+    supported = {".docx", ".doc", ".txt", ".md", ".tex"}
+    if ext not in supported:
+        log(f"不支持的格式: {ext} (支持: {' '.join(sorted(supported))})")
+        return False
+
+    if config is None:
+        config, config_path = resolve_config(input_path=input_path)
+    school = config.get("meta", {}).get("school_name", "")
+
+    tmp_dir = tempfile.mkdtemp(prefix="thesisfmt_")
+    tmp_docx = os.path.join(tmp_dir, "input.docx")
+
+    try:
+        if ext == ".docx":
+            shutil.copy2(input_path, tmp_docx)
+            log("[1/3] 输入为 docx，直接复制。")
+        elif ext == ".doc":
+            log("[1/3] 通过 Word COM 转换 .doc...")
+            convert_doc_to_docx(input_path, tmp_docx)
+            log("[1/3] 转换完成。")
+        elif ext in (".txt", ".md", ".tex"):
+            pandoc = find_pandoc()
+            if not pandoc:
+                log("错误: 未找到 pandoc。请将 pandoc.exe 放在程序同目录或加入 PATH。")
+                return False
+            if ext == ".txt":
+                log("[1/3] 预处理 txt -> md...")
+                tmp_md = os.path.join(tmp_dir, "input.md")
+                preprocess(input_path, tmp_md)
+                source, fmt_from = tmp_md, "markdown-smart"
+            elif ext == ".md":
+                source, fmt_from = input_path, "markdown-smart"
+            else:
+                source, fmt_from = input_path, "latex"
+            log(f"[1/3] pandoc 转换中 ({fmt_from} -> docx)...")
+            ret = subprocess.run(
+                [pandoc, source, f"--from={fmt_from}", "--to=docx", "--standalone", "-o", tmp_docx],
+                capture_output=True, text=True,
+            )
+            if ret.returncode != 0:
+                log(f"pandoc 失败:\n{ret.stderr}")
+                return False
+            log("[1/3] 转换完成。")
+
+        label = f"{school} " if school else ""
+        toc_only = bool(config.get("toc", {}).get("only_insert", False)) if config else False
+        cover_only = bool(config.get("cover", {}).get("only_insert", False)) if config else False
+        page_numbers_only = bool(config.get("page_numbers", {}).get("only_insert", False)) if config else False
+        header_only = bool(config.get("header_footer", {}).get("only_insert", False)) if config else False
+        if cover_only:
+            log("[2/3] 仅插入外部封面（保留正文与现有排版）...")
+        elif toc_only:
+            log("[2/3] 仅插入/更新目录（保留现有排版）...")
+        elif page_numbers_only:
+            log("[2/3] 仅更新页码（按现有分节，不自动补分节）...")
+        elif header_only:
+            log("[2/3] 仅更新页眉（按现有分节，不自动补分节）...")
+        else:
+            log(f"[2/3] 应用 {label}格式规范...")
+        fmt_warnings = apply_format(tmp_docx, output_path, config=config, config_path=config_path) or []
+        log("[2/3] 格式化完成。")
+        for warning in fmt_warnings:
+            log(warning)
+
+        runtime = config.get("_runtime", {}) if config else {}
+        force_dynamic_fields = runtime.get("caption_mode_effective") == "dynamic"
+        postprocess_mode = _resolve_postprocess_mode(config)
+        if postprocess_mode == "none":
+            if cover_only or runtime.get("cover_only"):
+                log("[3/3] 已跳过后处理（仅插入外部封面）。")
+            elif page_numbers_only or runtime.get("local_mode") == "page_numbers":
+                log("[3/3] 已跳过后处理（单独改页码不执行 Word 刷新）。")
+            elif header_only or runtime.get("local_mode") == "header_footer":
+                log("[3/3] 已跳过后处理（单独改页眉无需额外刷新）。")
+            else:
+                log("[3/3] 已跳过后处理。")
+        else:
+            if postprocess_mode == "fields_only":
+                log("[3/3] Word COM 后处理（仅刷新页眉相关域）...")
+            elif force_dynamic_fields:
+                log("[3/3] Word COM 后处理（更新目录与动态题注域）...")
+            else:
+                log("[3/3] Word COM 后处理（更新目录）...")
+            try:
+                postprocess(output_path, config=config, mode=postprocess_mode)
+                log("[3/3] 后处理完成。")
+            except Exception as exc:
+                if postprocess_mode == "fields_only":
+                    log(f"[3/3] 域刷新失败（非致命）: {exc}")
+                    log("[3/3] 已跳过。可在 Word 中手动更新页眉域。")
+                else:
+                    log(f"[3/3] 后处理失败（非致命）: {exc}")
+                    log("[3/3] 已跳过。可在 Word 中手动更新目录。")
+        log(f"\n输出文件: {output_path}")
+        return True
+    except Exception as exc:
+        log(f"\n错误: {exc}")
+        return False
+    finally:
+        if os.path.isdir(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
