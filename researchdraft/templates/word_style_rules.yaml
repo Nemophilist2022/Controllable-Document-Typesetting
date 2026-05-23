@@ -1,0 +1,12 @@
+checks:
+  - name: 标题层级
+    requirement: 使用 Word Heading 样式标记章节标题
+  - name: 正文样式
+    requirement: 正文使用统一 Normal 样式
+  - name: 目录
+    requirement: 文档包含目录区域
+  - name: 页码
+    requirement: 文档包含页脚页码区域
+  - name: 参考文献区域
+    requirement: 文档包含参考文献标题或区域
+

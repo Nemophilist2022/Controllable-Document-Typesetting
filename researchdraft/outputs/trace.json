@@ -1,0 +1,76 @@
+[
+  {
+    "task_id": "interview",
+    "agent": "InterviewAgent",
+    "stage": "INTERVIEWING",
+    "input_keys": [],
+    "output_keys": [
+      "context",
+      "draft_context.json"
+    ],
+    "tool_call": "fixed_questionnaire",
+    "status": "ok",
+    "failure_reason": ""
+  },
+  {
+    "task_id": "planning",
+    "agent": "PlanningAgent",
+    "stage": "PLANNING",
+    "input_keys": [
+      "context"
+    ],
+    "output_keys": [
+      "outline"
+    ],
+    "tool_call": "paper_outline.yaml",
+    "status": "ok",
+    "failure_reason": ""
+  },
+  {
+    "task_id": "drafting",
+    "agent": "WritingAgent",
+    "stage": "DRAFTING",
+    "input_keys": [
+      "context",
+      "outline"
+    ],
+    "output_keys": [
+      "draft_markdown",
+      "draft.md"
+    ],
+    "tool_call": "llm_optional_or_template",
+    "status": "ok",
+    "failure_reason": ""
+  },
+  {
+    "task_id": "formatting",
+    "agent": "WordFormatAgent",
+    "stage": "FORMATTING",
+    "input_keys": [
+      "draft_markdown"
+    ],
+    "output_keys": [
+      "docx_path"
+    ],
+    "tool_call": "tool_assign_heading_styles, tool_format_body, tool_insert_toc, tool_setup_page_numbers, tool_format_references, tool_word_postprocess",
+    "status": "ok",
+    "failure_reason": ""
+  },
+  {
+    "task_id": "verifying",
+    "agent": "VerifierAgent",
+    "stage": "VERIFYING",
+    "input_keys": [
+      "draft_markdown",
+      "docx_path",
+      "trace_entries"
+    ],
+    "output_keys": [
+      "quality_report.md",
+      "verification"
+    ],
+    "tool_call": "verify_content_and_format",
+    "status": "ok",
+    "failure_reason": ""
+  }
+]
